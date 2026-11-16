@@ -118,6 +118,27 @@ I/HyperLightsService: realSetLightLocked, # mId: 18, curPriority: 2 color: fbfff
 
 注意：HAL **不写 `effect`**。`effect` 是驱动自带的 cfg 选择器，MIUI 走的是 `color + brightness + period/repeat/run` 这套。
 
+## 实测：通知灯（id 4）路径不会点亮背灯
+
+定时通知触发时（两次一致）：
+
+```
+realSetLightLocked, # mId: 4, curPriority: 2 color: ffffffff   ← 点亮
+realSetLightLocked, # mId: 4, curPriority: 2 color: 0          ← 3 秒后熄灭
+```
+
+同时采样到的 sysfs 变化：
+
+- `brightness` → 255
+- `hwen` 保持 1，3 秒后变 0（芯片断电）
+- `effect` 全程 `cfg_led_off`，通道使能寄存器 `0x01` 全程 `0x00`
+
+由于 `effect` 是使能通道的必要条件（见 `EXPERIMENTS.md` E10），这条路径**不会让背灯发光**——MIUI 只是把 `hwen`/`brightness` 写了一遍。
+
+这与肉眼观察一致：通知触发期间灯始终是暗的。
+
+**待查**：背灯 id 18 的真实场景（游戏/音乐/来电提醒）是否会写 `effect` 或以其他方式使能通道。
+
 ## 已知推论（待验证）
 
 1. HAL 收到 `color==0` 时写 `hwen=0`，收到非 0 时写 `hwen=1` 再写 `color`/`brightness` —— 与本机观察到的"场景结束后灯全黑且 `hwen=0`"一致

@@ -93,3 +93,47 @@ S=$(date +%s%N); su -c 'echo 40 > /sys/class/leds/aw21024_led/brightness'; E=$(d
 | `su -c` 写一次 sysfs | 7 ms |
 
 结论：应用侧以 10 Hz 通过 `su` 驱动灯是可行的（约 7% 单核）。KernelSU 的授权是常驻的，无弹窗。
+
+## E9　抓取 MIUI 点灯全过程（定时通知）
+
+用 50 ms 粒度采样 `hwen/brightness/effect/reg`，同时 `logcat -s HyperLightsService` 落盘，覆盖定时通知触发窗口。
+
+两次事件结果完全一致：
+
+```
+17:20:00.114  hwen=1  bri=255  cfg=cfg_led_off  reg:0x00=0x91 0x01=0x00
+17:20:03.107  hwen=0  bri=255  cfg=cfg_led_off  reg:0x00=0x00 0x01=0x00
+17:21:00.059  hwen=1  bri=255  cfg=cfg_led_off  reg:0x00=0x91 0x01=0x00
+17:21:03.097  hwen=0  bri=255  cfg=cfg_led_off  reg:0x00=0x00 0x01=0x00
+
+MIUI 日志：
+17:20:00.056  realSetLightLocked, # mId: 4, curPriority: 2 color: ffffffff
+17:20:03.059  realSetLightLocked, # mId: 4, curPriority: 2 color: 0
+17:21:00.022  realSetLightLocked, # mId: 4, curPriority: 2 color: ffffffff
+17:21:03.023  realSetLightLocked, # mId: 4, curPriority: 2 color: 0
+```
+
+观察：
+
+- 走的是 **灯 id 4（通知灯）**，不是 18（背灯）
+- 只写 `hwen` 与 `brightness`，**从未写 `effect`**
+- 通道使能寄存器 `0x01` 全程为 `0x00`
+- 持续 3 秒（与 `NOTIFICATION_DURATION_DEFAULT = 3000` 一致）
+- 结束后 `hwen=0`，`reg:0x00` 由 `0x91` 变 `0x00`（芯片断电，I2C 不可读）
+
+## E10　`effect` 是否必需（对照实验）
+
+固定 `hwen=1`、`brightness=200`，改变 `effect`：
+
+```
+effect=0  → reg:0x01=0x00, 0xa7~0xab=0x00  → 灯不亮（肉眼确认）
+effect=1  → reg:0x01=0x60, 0xa7~0xab=0xff  → 灯亮
+```
+
+结论：**`effect` 是必需的**。`brightness` 只调光，不负责使能通道。
+
+## E11　写 `color` 能否替代 `effect`
+
+依次写入 `0xffffff`、`16777215`、`255,255,255`、`ffffff`、`255`，`effect` 读回始终为 `cfg_led_off`，`reg:0x01` 始终 `0x00`。
+
+结论：至少这些格式下 `color` 不会使能通道；`color` 的作用待定（可能只在通道已使能时参与调色）。
