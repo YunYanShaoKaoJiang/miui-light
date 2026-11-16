@@ -139,6 +139,22 @@ realSetLightLocked, # mId: 4, curPriority: 2 color: 0          ← 3 秒后熄�
 
 **待查**：背灯 id 18 的真实场景（游戏/音乐/来电提醒）是否会写 `effect` 或以其他方式使能通道。
 
+
+## 实测：音乐律动（id 19）
+
+播放音乐时，`HyperLightsService` 以约 400 ms 为周期反复下发：
+
+```
+realSetLightLocked, # mId: 19, curPriority: 4 color: 32323232
+realSetLightLocked, # mId: 19, curPriority: 4 color: 0
+```
+
+- `color` 为灰度 ARGB（`0xVVVVVVVV`），alpha 即电平
+- sysfs 侧 `effect` 全程保持 `cfg_led_off`，但 `reg 0x01 = 0xff`（通道使能），灯确实在亮
+- `brightness` 在 1~97 间随节奏变化，`hwen` 频繁 0↔1
+
+结论：存在不依赖 `effect` 的第二条使能通路，MIUI 走的就是它。
+
 ## 已知推论（待验证）
 
 1. HAL 收到 `color==0` 时写 `hwen=0`，收到非 0 时写 `hwen=1` 再写 `color`/`brightness` —— 与本机观察到的"场景结束后灯全黑且 `hwen=0`"一致

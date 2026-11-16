@@ -137,3 +137,37 @@ effect=1  → reg:0x01=0x60, 0xa7~0xab=0xff  → 灯亮
 依次写入 `0xffffff`、`16777215`、`255,255,255`、`ffffff`、`255`，`effect` 读回始终为 `cfg_led_off`，`reg:0x01` 始终 `0x00`。
 
 结论：至少这些格式下 `color` 不会使能通道；`color` 的作用待定（可能只在通道已使能时参与调色）。
+
+## E12　音乐律动（灯 id 19）—— MIUI 不用 `effect` 也能点灯
+
+播放音乐触发背灯律动，40 秒采样，283 条状态变化。
+
+**MIUI 侧日志**（每 ~400 ms 一对）：
+
+```
+realSetLightLocked, # mId: 19, curPriority: 4 color: 32323232
+realSetLightLocked, # mId: 19, curPriority: 4 color: 0
+realSetLightLocked, # mId: 19, curPriority: 4 color: 26262626
+realSetLightLocked, # mId: 19, curPriority: 4 color: 0
+```
+
+`color` 取值形如 `0x12121212`、`0x1f1f1f1f`、`0x32323232`——**灰度 ARGB**，alpha 与 RGB 同值，即"亮度等级"。
+
+**sysfs 侧统计**：
+
+| 指标 | 结果 |
+|---|---|
+| `effect` | **284/284 次采样均为 `cfg_led_off`** |
+| `brightness` | 1 ~ 97，中位 33 |
+| `reg 0x01` | `0xff` 242 次 / `0x00` 42 次 |
+| `reg 0xa7~0xab` | 常为 `0xff` |
+| `hwen` | 频繁 0↔1 |
+| 变化间隔 | 约 80 ms 一步，每 0.3~0.8 s 一个爆发 |
+
+**结论（修正 E10）**：
+
+- `effect` 不是点灯的**唯一**路径。MIUI 全程未写 `effect`，却让通道使能（`reg 0x01=0xff`）且灯在亮。
+- 因此存在第二条通路：由 `color`（或 `run`）使能通道。E10 的对照实验只证明了"只写 `hwen`+`brightness` 不亮"，不能推出"`effect` 必需"。
+- 两条通路的寄存器表现不同：`effect=1` → `0x01=0x60`；音乐律动 → `0x01=0xff`。
+
+**待验证**：直接用 `color`（8 位 ARGB 十六进制，如 `0x32323232`）能否在 `effect=0` 时点亮通道。
